@@ -3,7 +3,7 @@ name: DevSecOps Vulnerable Lab Pipeline
 on:
   push:
     branches: [ "master", "main" ]
-  workflow_dispatch: # Manuel tetiklemek için
+  workflow_dispatch:
 
 jobs:
   deploy-lab:
@@ -13,17 +13,32 @@ jobs:
       - name: Code Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-on-version: '20' # Juice Shop için stabil bir sürüm
-
       - name: Install and Start Juice Shop (Docker ile)
         run: |
-          echo "Juice Shop Docker container'ı başlatılıyor..."
-          docker run -d -p 3000:3000 --name bami-juice-shop baimaj/juice-shop
+          docker run -d -p 3000:3000 --name bami-juice-shop bkimminich/juice-shop
           
-      - name: Check Application Status
+      - name: Install Ngrok
         run: |
-          sleep 10
-          curl -I http://localhost:3000
+          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.co.devsecops > /dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.dir/ngrok.list
+          sudo apt-get update && sudo apt-get install ngrok
+
+      - name: Configure Ngrok
+        run: |
+          ngrok config add-authtoken ${{ secrets.NGROK_AUTHTOKEN }}
+
+      - name: Start Ngrok Tunnel
+        run: |
+          # Ngrok'u arka planda başlatıyoruz ki pipeline bloklanmasın
+          ngrok http 3000 --log=stdout > ngrok.log &
+          sleep 5 # Tünelin oturması için kısa bir bekleme
+
+      - name: Get Public URL
+        run: |
+          # Ngrok API'sinden oluşturulan dinamik public URL'i çekiyoruz
+          PUBLIC_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+          echo "============================================="
+          echo "LAB WEB SITESI LIVE OLMUSTUR!"
+          echo "Target URL: $PUBLIC_URL"
+          echo "============================================="
+          # Sonraki adımlarda kullanabilmek için URL'i logluyoruz veya çevre değişkenine atıyoruz
